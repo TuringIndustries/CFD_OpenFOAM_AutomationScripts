@@ -1,0 +1,61 @@
+#!/bin/bash
+
+# cd ${0%/*} || exit 1    # run from this directory
+
+. ${WM_PROJECT_DIR:?}/bin/tools/RunFunctions # Source the OpenFoam runFunctions
+
+# Loop through all the case folders in the current working directory
+for case in */; do
+
+  	# Change to the case directory
+  	cd "$case"
+	
+	echo $case
+
+  	# Generate a background hex mesh using blockMesh utility and save the output to a log file
+  	echo "Generating a background hex mesh using blockMesh utility and saving the output to a log file..."
+  	runApplication blockMesh
+	
+	# Change empty patch to symmetry patch in the boundary file using sed command
+	echo "Changing empty patch to symmetry patch in the boundary file using sed command..."
+	sed -i 's/empty/symmetry/g' constant/polyMesh/boundary
+		
+	# Copy zero directory into place form 0.orig
+  	[ ! -d 0 ] && cp -r 0.orig 0
+	
+	
+	# Decompose blockMesh ready for parallel run
+	echo “Decomposing blockMesh ready for parallel run…”
+	runApplication decomposePar
+
+  	# Run snappyHexMesh in parallel and overwrite the existing mesh, and save the output to a log file
+ 	echo "Running snappyHexMesh in parallel and overwriting the existing mesh, and saving the output to a log file..."
+ 	runParallel snappyHexMesh -overwrite
+
+	echo "Reconstructing mesh from the parallel SHM run using reconstructParMesh into constant, and then decomposing case for solver run..."
+  	runApplication reconstructParMesh -constant
+	
+	wait
+
+	# Remove the decomposed cases using the wildcard * to recursively remove all processor folders/files
+	echo "Removing decomposed simulation folders..."
+  	rm -rf processor*
+	
+	wait
+	decomposePar -force > decomposeafterSHM.log 
+	
+	wait
+	runParallel patchSummary
+	
+
+	# Check all mesh features and write erroneous sets to vtk files in postProcessing using checkMesh utility, and save the output 	to 	a log file
+ 	echo "Checking all mesh features and writing erroneous sets to vtk files in postProcessing using checkMesh utility, and saving 	the output to a log file..."
+  	runParallel checkMesh -allGeometry -allTopology -writeSets vtk
+
+  	# Change back to the parent directory
+  	cd ..
+
+done
+	
+# Print a message when done
+echo "All meshing completed."

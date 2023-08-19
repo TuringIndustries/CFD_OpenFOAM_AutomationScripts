@@ -1,0 +1,95 @@
+#!/bin/bash
+
+cd ${0%/*} || exit 1    # run from this directory
+
+. ${WM_PROJECT_DIR:?}/bin/tools/RunFunctions # Source the OpenFoam runFunctions
+
+
+
+# Loop through all the case folders in the current working directory
+for case in */; do
+
+  	# Change to the case directory
+  	cd "$case"
+	
+	echo $case
+
+	# Copy zero directory into place form 0.orig
+  	[ ! -d 0 ] && cp -r 0.orig 0
+	
+	# Decompose case ready for parallel run
+	runApplication decomposePar
+
+	runApplication potentialFoam
+	
+	# Call potential foam Allrun script from the same folder as the original script 
+ 	echo; printf "Calling potential foam Allrun script "; echo
+				
+	../Allrun_Solver_Parallel
+
+  	# Change back to the parent directory
+  	cd ..
+	
+done
+
+# Print a message when done
+echo "All k_Epsilon simulations completed."
+
+# ---------------------------------------kOmegaSST RUN---------------------------------------------------------
+
+# Create a new parent directory for new cases with different turbulence models
+echo "Creating a new parent directory for new case with different turbulence models..."
+mkdir k_omegaSST_Runs
+
+	# Loop through all the case folders again, and for each case, do the following:
+	for case in */; do
+
+	# Change to the case directory
+	cd "$case"
+
+	# Copy the constant and system folders from the original case to the new parent directory 
+	echo "Copying constant and system folders from $case to k_omegaSST_Runs/$case..."
+	cp -r constant system k_omegaSSTRuns/$case
+
+	# Find the latest timestep folder in the original case 
+	echo "Finding latest timestep folder in $case..."
+	latestTime=$(foamListTimes -latestTime -withZero | tail -n 1)
+	echo "Latest time folder is $latestTime"
+
+	# Copy the latest timestep folder from the original case to the 0 folder in the new parent directory 
+	echo "Copying latest timestep folder from $case to k_omegaSST_Runs/$case/0..."
+	cp -r -f -T $latestTime k_omegaSST_Runs/$case/0
+
+	# Change the turbulence model from kEpsilon to kOmegaSST in the momentumTransport file in the new parent directory 
+	echo "Changing turbulence model from kEpsilon to kOmegaSST in k_omegaSST_Runs/$case/constant/momentumTransport..."
+	sed -i 's/kEpsilon/kOmegaSST/g' k_omegaSST_Runs/$case/constant/momentumTransport
+
+	# Change back to the parent directory
+	cd ..
+	done
+
+# Change to the new parent directory
+echo "Changing to the new parent directory..."
+cd k_omegaSST_Runs
+
+# Loop through all the case folders in the new parent directory, and for each case, do the following:
+for case in */; do
+	
+	# Change to the case directory
+	cd "$case"
+
+	# Decompose the case for parallel run
+	echo "Decomposing $case for parallel run..."
+	runApplication decomposePar 
+
+	echo; printf "Calling Allrun script to run the mapped case... "
+	
+	# Call fromMapFields Allrun script from the same folder as the original script
+	../../Allrun_Solver_Parallel
+
+	# Change back to the parent directory
+	cd ..
+done
+
+# Print a message when done
+echo "All k_omegaSST simulations completed."

@@ -1,0 +1,63 @@
+#!/bin/bash
+
+
+
+. ${WM_PROJECT_DIR:?}/bin/tools/RunFunctions # Source the OpenFoam runFunctions
+
+
+
+	
+  
+# Initialise the velocity field using potentialFoam utility in parallel and save the output to a log file
+#echo "Initializing the velocity field using potentialFoam utility in parallel and saving the output to a log file..."
+
+#runParallel potentialFoam 
+
+
+
+# Run the specified application in parallel and save the output to a log file
+echo; echo "Running $getApplication in parallel and saving the output to a log file..."; echo;
+
+runParallel $(getApplication)
+
+wait
+
+# Reconstruct mesh and fields from the parallel run using reconstructParMesh and reconstructPar utilities and save the output to log files
+echo; echo "Reconstructing mesh and fields from the parallel run using reconstructParMesh and reconstructPar utilities and saving the output to log files..."	; echo;
+runApplication reconstructPar
+
+
+wait
+
+
+# Remove the decomposed cases using the wildcard * to recursively remove all processor folders/files
+# echo "Removing decomposed simulation folders..."
+
+rm -rf processor*
+
+
+# Post-process fields using the specified application and postProcess utilities and save the output to log files
+echo; echo "Post-processing fields using $application and postProcess utilities and saving the output to log files..."; echo;
+
+postProcess -func "mag(U)" > PostprocessMag_U.log
+$(getApplication) -postProcess -func yPlus > postProcessyPlus.log
+
+
+
+# Plot residuals using foamLog utility with the default format option and save the output to a log file
+echo; echo "Plotting residuals using foamLog utility with the default format option and saving the output to a log file..."; echo;
+
+foamLog log."$(getApplication)"
+
+
+
+# Print a message when done
+echo "Simulation completed."
+
+
+
+
+
+
+
+
